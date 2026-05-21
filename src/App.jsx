@@ -35,8 +35,7 @@ function StatusBadge({ status }) {
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: 6,
-      fontSize: 11, fontWeight: 600,
-      background: s.bg, color: s.color,
+      fontSize: 11, fontWeight: 600, background: s.bg, color: s.color,
     }}>
       {s.label}
     </span>
@@ -53,7 +52,7 @@ function StatCard({ label, value, sub }) {
   )
 }
 
-function Auth({ onAuth }) {
+function Auth() {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -80,7 +79,6 @@ function Auth({ onAuth }) {
     <div style={{ maxWidth: 380, margin: '6rem auto', padding: '0 1rem' }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Tech Hours</h1>
       <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 32 }}>Track flagged vs. clock hours by pay type</p>
-
       <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         {['login', 'signup'].map(m => (
           <button key={m} onClick={() => setMode(m)} style={{
@@ -92,7 +90,6 @@ function Auth({ onAuth }) {
           }}>{m === 'login' ? 'Log in' : 'Sign up'}</button>
         ))}
       </div>
-
       <div style={{ marginBottom: 12 }}>
         <label style={labelStyle}>Email</label>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
@@ -102,14 +99,12 @@ function Auth({ onAuth }) {
         <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
           onKeyDown={e => e.key === 'Enter' && submit()} />
       </div>
-
       <button onClick={submit} disabled={loading} style={{
         width: '100%', padding: '10px', background: 'var(--accent)', color: 'var(--bg)',
         border: 'none', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 600
       }}>
         {loading ? 'Please wait...' : mode === 'login' ? 'Log in' : 'Sign up'}
       </button>
-
       {msg && <p style={{ fontSize: 13, color: msg.includes('Check') ? '#3B6D11' : '#A32D2D', marginTop: 10, textAlign: 'center' }}>{msg}</p>}
     </div>
   )
@@ -216,7 +211,7 @@ function Dashboard({ jobs }) {
         )}
       </div>
 
-      {Object.entries(PAY_TYPES).map(([key, { label, color }]) => (
+      {Object.entries(PAY_TYPES).map(([key, { color }]) => (
         <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <span style={{ fontSize: 12, width: 110, flexShrink: 0 }}><Badge type={key} /></span>
           <div style={{ flex: 1, background: 'var(--surface2)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
@@ -236,20 +231,32 @@ function Dashboard({ jobs }) {
 }
 
 function LogJob({ onAdd }) {
-  const [form, setForm] = useState({
-    ro: '', tag: '', vehicle: '', pay: 'CP',
-    flagged: '', clock: '', status: 'IP', description: '', notes: ''
-  })
+  const emptyLine = () => ({ id: Date.now() + Math.random(), description: '', flagged: '', clock: '' })
+  const [form, setForm] = useState({ ro: '', tag: '', vehicle: '', pay: 'CP', status: 'IP', notes: '' })
+  const [lines, setLines] = useState([emptyLine()])
   const [msg, setMsg] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setForm_ = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setLine = (id, k, v) => setLines(ls => ls.map(l => l.id === id ? { ...l, [k]: v } : l))
+  const addLine = () => setLines(ls => [...ls, emptyLine()])
+  const removeLine = (id) => setLines(ls => ls.filter(l => l.id !== id))
+
+  const totFlag = lines.reduce((s, l) => s + (parseFloat(l.flagged) || 0), 0)
+  const totClock = lines.reduce((s, l) => s + (parseFloat(l.clock) || 0), 0)
 
   const submit = async () => {
-    if (!form.ro || !form.flagged || !form.clock) { setMsg('error'); return }
+    if (!form.ro) { setMsg('error'); return }
+    if (lines.some(l => !l.description)) { setMsg('errorlines'); return }
     setLoading(true)
-    await onAdd({ ...form, flagged: parseFloat(form.flagged), clock: parseFloat(form.clock) })
-    setForm({ ro: '', tag: '', vehicle: '', pay: 'CP', flagged: '', clock: '', status: 'IP', description: '', notes: '' })
+    await onAdd({
+      ...form,
+      flagged: totFlag,
+      clock: totClock,
+      lines: lines.map(l => ({ description: l.description, flagged: parseFloat(l.flagged) || 0, clock: parseFloat(l.clock) || 0 })),
+    })
+    setForm({ ro: '', tag: '', vehicle: '', pay: 'CP', status: 'IP', notes: '' })
+    setLines([emptyLine()])
     setMsg('success')
     setLoading(false)
     setTimeout(() => setMsg(''), 2500)
@@ -263,45 +270,98 @@ function LogJob({ onAdd }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={fieldStyle}>
           <label style={labelStyle}>RO number</label>
-          <input value={form.ro} onChange={e => set('ro', e.target.value)} placeholder="e.g. 123456" />
+          <input value={form.ro} onChange={e => setForm_('ro', e.target.value)} placeholder="e.g. 123456" />
         </div>
         <div style={fieldStyle}>
           <label style={labelStyle}>Tag number</label>
-          <input value={form.tag} onChange={e => set('tag', e.target.value)} placeholder="e.g. T-482" />
+          <input value={form.tag} onChange={e => setForm_('tag', e.target.value)} placeholder="e.g. T-482" />
         </div>
         <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
           <label style={labelStyle}>Vehicle</label>
-          <input value={form.vehicle} onChange={e => set('vehicle', e.target.value)} placeholder="e.g. 2021 VW Tiguan" />
+          <input value={form.vehicle} onChange={e => setForm_('vehicle', e.target.value)} placeholder="e.g. 2021 VW Tiguan" />
         </div>
         <div style={fieldStyle}>
           <label style={labelStyle}>Pay type</label>
-          <select value={form.pay} onChange={e => set('pay', e.target.value)}>
+          <select value={form.pay} onChange={e => setForm_('pay', e.target.value)}>
             {Object.entries(PAY_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </div>
         <div style={fieldStyle}>
           <label style={labelStyle}>Status</label>
-          <select value={form.status} onChange={e => set('status', e.target.value)}>
+          <select value={form.status} onChange={e => setForm_('status', e.target.value)}>
             {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </div>
-        <div style={fieldStyle}>
-          <label style={labelStyle}>Flagged hrs</label>
-          <input type="number" value={form.flagged} onChange={e => set('flagged', e.target.value)} placeholder="e.g. 2.5" step="0.1" min="0" />
+      </div>
+
+      <div style={{ margin: '4px 0 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Labour lines</p>
+          <button onClick={addLine} style={{
+            padding: '4px 12px', borderRadius: 'var(--radius-md)',
+            border: '0.5px solid var(--border2)', background: 'transparent',
+            color: 'var(--text2)', fontSize: 12
+          }}>+ Add line</button>
         </div>
-        <div style={fieldStyle}>
-          <label style={labelStyle}>Clock hrs</label>
-          <input type="number" value={form.clock} onChange={e => set('clock', e.target.value)} placeholder="e.g. 1.8" step="0.1" min="0" />
-        </div>
-        <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
-          <label style={labelStyle}>Job description</label>
-          <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="e.g. DSG service, brake fluid flush..." style={{ height: 60 }} />
-        </div>
-        <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
-          <label style={labelStyle}>Notes</label>
-          <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. needs follow up, customer advised..." style={{ height: 60 }} />
+
+        {lines.map((line, idx) => (
+          <div key={line.id} style={{
+            background: 'var(--surface2)', borderRadius: 'var(--radius-md)',
+            padding: '10px 12px', marginBottom: 8,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, minWidth: 20 }}>#{idx + 1}</span>
+              <input
+                value={line.description}
+                onChange={e => setLine(line.id, 'description', e.target.value)}
+                placeholder="e.g. DSG fluid and filter"
+                style={{ flex: 1 }}
+              />
+              {lines.length > 1 && (
+                <button onClick={() => removeLine(line.id)} style={{
+                  background: 'none', border: 'none', color: 'var(--text3)',
+                  fontSize: 16, padding: '0 4px', cursor: 'pointer', lineHeight: 1
+                }}>✕</button>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ ...labelStyle, fontSize: 11 }}>Flagged hrs</label>
+                <input
+                  type="number" step="0.1" min="0"
+                  value={line.flagged}
+                  onChange={e => setLine(line.id, 'flagged', e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label style={{ ...labelStyle, fontSize: 11 }}>Clock hrs</label>
+                <input
+                  type="number" step="0.1" min="0"
+                  value={line.clock}
+                  onChange={e => setLine(line.id, 'clock', e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div style={{
+          display: 'flex', justifyContent: 'flex-end', gap: 16,
+          padding: '8px 12px', background: 'var(--surface2)',
+          borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600
+        }}>
+          <span style={{ color: 'var(--text2)' }}>Total flagged: <span style={{ color: 'var(--text)' }}>{totFlag.toFixed(1)} hrs</span></span>
+          <span style={{ color: 'var(--text2)' }}>Total clock: <span style={{ color: 'var(--text)' }}>{totClock.toFixed(1)} hrs</span></span>
         </div>
       </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={labelStyle}>Notes</label>
+        <textarea value={form.notes} onChange={e => setForm_('notes', e.target.value)} placeholder="e.g. needs follow up, customer advised..." style={{ height: 60 }} />
+      </div>
+
       <button onClick={submit} disabled={loading} style={{
         width: '100%', padding: '10px', background: 'var(--accent)', color: 'var(--bg)',
         border: 'none', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 600, marginTop: 4
@@ -309,7 +369,8 @@ function LogJob({ onAdd }) {
         {loading ? 'Saving...' : '+ Add job'}
       </button>
       {msg === 'success' && <p style={{ textAlign: 'center', fontSize: 13, color: '#3B6D11', marginTop: 8 }}>Job logged!</p>}
-      {msg === 'error' && <p style={{ textAlign: 'center', fontSize: 13, color: '#A32D2D', marginTop: 8 }}>Please fill in RO, flagged hrs, and clock hrs.</p>}
+      {msg === 'error' && <p style={{ textAlign: 'center', fontSize: 13, color: '#A32D2D', marginTop: 8 }}>Please fill in the RO number.</p>}
+      {msg === 'errorlines' && <p style={{ textAlign: 'center', fontSize: 13, color: '#A32D2D', marginTop: 8 }}>Please add a description to every labour line.</p>}
     </div>
   )
 }
@@ -367,6 +428,7 @@ function History({ jobs, onDelete, onUpdateStatus }) {
           const d = new Date(j.date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
           const isOpen = expanded === j.id
           const statusColor = STATUSES[j.status]?.color || '#888'
+          const jobLines = j.lines || []
           return (
             <div key={j.id} style={{
               background: 'var(--surface)', border: '0.5px solid var(--border)',
@@ -392,9 +454,30 @@ function History({ jobs, onDelete, onUpdateStatus }) {
 
               {isOpen && (
                 <div style={{ padding: '0 16px 14px', borderTop: '0.5px solid var(--border)' }}>
-                  {j.description && <p style={{ fontSize: 13, color: 'var(--text2)', margin: '10px 0 6px' }}><strong>Description:</strong> {j.description}</p>}
-                  {j.notes && <p style={{ fontSize: 13, color: 'var(--text2)', margin: '6px 0' }}><strong>Notes:</strong> {j.notes}</p>}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                  {jobLines.length > 0 && (
+                    <div style={{ marginTop: 12, marginBottom: 12 }}>
+                      <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Labour lines</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {jobLines.map((line, idx) => (
+                          <div key={idx} style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            background: 'var(--surface2)', borderRadius: 'var(--radius-md)',
+                            padding: '8px 12px', flexWrap: 'wrap'
+                          }}>
+                            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, minWidth: 20 }}>#{idx + 1}</span>
+                            <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{line.description}</span>
+                            <span style={{ fontSize: 12, fontWeight: 500 }}>{line.flagged.toFixed(1)}<span style={{ fontSize: 11, color: 'var(--text3)' }}> flag</span></span>
+                            <span style={{ fontSize: 12, fontWeight: 500 }}>{line.clock.toFixed(1)}<span style={{ fontSize: 11, color: 'var(--text3)' }}> clk</span></span>
+                            <span style={{ fontSize: 12, color: line.clock > 0 && (line.flagged / line.clock) >= 1 ? '#3B6D11' : '#A32D2D', fontWeight: 600 }}>
+                              {line.clock > 0 ? (line.flagged / line.clock * 100).toFixed(0) : '—'}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {j.notes && <p style={{ fontSize: 13, color: 'var(--text2)', margin: '6px 0 12px' }}><strong>Notes:</strong> {j.notes}</p>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                     <select
                       value={j.status || 'IP'}
                       onChange={e => onUpdateStatus(j.id, e.target.value)}
