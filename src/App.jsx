@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Chart, registerables } from 'chart.js'
+import { supabase } from './supabase'
 Chart.register(...registerables)
 
 const PAY_TYPES = {
@@ -10,10 +11,10 @@ const PAY_TYPES = {
 }
 
 const STATUSES = {
-  IP: { label: 'In progress',       color: '#185FA5', bg: '#E6F1FB' },
-  WP: { label: 'Waiting on parts',  color: '#854F0B', bg: '#FAEEDA' },
+  IP: { label: 'In progress',         color: '#185FA5', bg: '#E6F1FB' },
+  WP: { label: 'Waiting on parts',    color: '#854F0B', bg: '#FAEEDA' },
   WC: { label: 'Waiting on customer', color: '#993556', bg: '#FBEAF0' },
-  DN: { label: 'Complete',          color: '#3B6D11', bg: '#EAF3DE' },
+  DN: { label: 'Complete',            color: '#3B6D11', bg: '#EAF3DE' },
 }
 
 function Badge({ type }) {
@@ -48,6 +49,68 @@ function StatCard({ label, value, sub }) {
       <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>{label}</p>
       <p style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)' }}>{value}</p>
       {sub && <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{sub}</p>}
+    </div>
+  )
+}
+
+function Auth({ onAuth }) {
+  const [mode, setMode] = useState('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [msg, setMsg] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const submit = async () => {
+    setLoading(true)
+    setMsg('')
+    if (mode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setMsg(error.message)
+    } else {
+      const { error } = await supabase.auth.signUp({ email, password })
+      if (error) setMsg(error.message)
+      else setMsg('Check your email to confirm your account, then log in.')
+    }
+    setLoading(false)
+  }
+
+  const labelStyle = { display: 'block', fontSize: 12, color: 'var(--text2)', marginBottom: 4 }
+
+  return (
+    <div style={{ maxWidth: 380, margin: '6rem auto', padding: '0 1rem' }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Tech Hours</h1>
+      <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 32 }}>Track flagged vs. clock hours by pay type</p>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        {['login', 'signup'].map(m => (
+          <button key={m} onClick={() => setMode(m)} style={{
+            padding: '6px 16px', borderRadius: 'var(--radius-md)',
+            border: '0.5px solid var(--border2)',
+            background: mode === m ? 'var(--accent)' : 'transparent',
+            color: mode === m ? 'var(--bg)' : 'var(--text2)',
+            fontSize: 13, fontWeight: 500, textTransform: 'capitalize'
+          }}>{m === 'login' ? 'Log in' : 'Sign up'}</button>
+        ))}
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={labelStyle}>Email</label>
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label style={labelStyle}>Password</label>
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
+          onKeyDown={e => e.key === 'Enter' && submit()} />
+      </div>
+
+      <button onClick={submit} disabled={loading} style={{
+        width: '100%', padding: '10px', background: 'var(--accent)', color: 'var(--bg)',
+        border: 'none', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 600
+      }}>
+        {loading ? 'Please wait...' : mode === 'login' ? 'Log in' : 'Sign up'}
+      </button>
+
+      {msg && <p style={{ fontSize: 13, color: msg.includes('Check') ? '#3B6D11' : '#A32D2D', marginTop: 10, textAlign: 'center' }}>{msg}</p>}
     </div>
   )
 }
@@ -90,7 +153,6 @@ function Dashboard({ jobs }) {
     trendData.push(parseFloat(hrs.toFixed(1)))
   }
 
-  // Status breakdown for this week
   const byStatus = {}
   Object.keys(STATUSES).forEach(s => { byStatus[s] = 0 })
   weekJobs.forEach(j => { if (j.status) byStatus[j.status]++ })
@@ -108,10 +170,7 @@ function Dashboard({ jobs }) {
           data: trendData,
           borderColor: isDark ? '#85B7EB' : '#185FA5',
           backgroundColor: isDark ? '#85B7EB22' : '#185FA522',
-          borderWidth: 2,
-          pointRadius: 4,
-          fill: true,
-          tension: 0.35,
+          borderWidth: 2, pointRadius: 4, fill: true, tension: 0.35,
         }]
       },
       options: {
@@ -179,24 +238,20 @@ function Dashboard({ jobs }) {
 function LogJob({ onAdd }) {
   const [form, setForm] = useState({
     ro: '', tag: '', vehicle: '', pay: 'CP',
-    flagged: '', clock: '', status: 'IP', desc: '', notes: ''
+    flagged: '', clock: '', status: 'IP', description: '', notes: ''
   })
   const [msg, setMsg] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const submit = () => {
-    if (!form.ro || !form.flagged || !form.clock) {
-      setMsg('error'); return
-    }
-    onAdd({
-      id: Date.now(), ...form,
-      flagged: parseFloat(form.flagged),
-      clock: parseFloat(form.clock),
-      date: new Date().toISOString()
-    })
-    setForm({ ro: '', tag: '', vehicle: '', pay: 'CP', flagged: '', clock: '', status: 'IP', desc: '', notes: '' })
+  const submit = async () => {
+    if (!form.ro || !form.flagged || !form.clock) { setMsg('error'); return }
+    setLoading(true)
+    await onAdd({ ...form, flagged: parseFloat(form.flagged), clock: parseFloat(form.clock) })
+    setForm({ ro: '', tag: '', vehicle: '', pay: 'CP', flagged: '', clock: '', status: 'IP', description: '', notes: '' })
     setMsg('success')
+    setLoading(false)
     setTimeout(() => setMsg(''), 2500)
   }
 
@@ -240,18 +295,18 @@ function LogJob({ onAdd }) {
         </div>
         <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
           <label style={labelStyle}>Job description</label>
-          <textarea value={form.desc} onChange={e => set('desc', e.target.value)} placeholder="e.g. DSG service, brake fluid flush..." style={{ height: 60 }} />
+          <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="e.g. DSG service, brake fluid flush..." style={{ height: 60 }} />
         </div>
         <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
           <label style={labelStyle}>Notes</label>
-          <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. needs follow up, customer advised of wear item..." style={{ height: 60 }} />
+          <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. needs follow up, customer advised..." style={{ height: 60 }} />
         </div>
       </div>
-      <button onClick={submit} style={{
+      <button onClick={submit} disabled={loading} style={{
         width: '100%', padding: '10px', background: 'var(--accent)', color: 'var(--bg)',
         border: 'none', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 600, marginTop: 4
       }}>
-        + Add job
+        {loading ? 'Saving...' : '+ Add job'}
       </button>
       {msg === 'success' && <p style={{ textAlign: 'center', fontSize: 13, color: '#3B6D11', marginTop: 8 }}>Job logged!</p>}
       {msg === 'error' && <p style={{ textAlign: 'center', fontSize: 13, color: '#A32D2D', marginTop: 8 }}>Please fill in RO, flagged hrs, and clock hrs.</p>}
@@ -284,7 +339,7 @@ function History({ jobs, onDelete, onUpdateStatus }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <select value={payFilter} onChange={e => setPayFilter(e.target.value)} style={{ width: 'auto' }}>
           <option value="ALL">All pay types</option>
           {Object.entries(PAY_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -294,7 +349,7 @@ function History({ jobs, onDelete, onUpdateStatus }) {
           {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
       </div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {sortBtn('recent', '🕐 Recent')}
         {sortBtn('flagged', '📊 Most hrs')}
         {sortBtn('eff', '📈 Best eff.')}
@@ -337,7 +392,7 @@ function History({ jobs, onDelete, onUpdateStatus }) {
 
               {isOpen && (
                 <div style={{ padding: '0 16px 14px', borderTop: '0.5px solid var(--border)' }}>
-                  {j.desc && <p style={{ fontSize: 13, color: 'var(--text2)', margin: '10px 0 6px' }}><strong>Description:</strong> {j.desc}</p>}
+                  {j.description && <p style={{ fontSize: 13, color: 'var(--text2)', margin: '10px 0 6px' }}><strong>Description:</strong> {j.description}</p>}
                   {j.notes && <p style={{ fontSize: 13, color: 'var(--text2)', margin: '6px 0' }}><strong>Notes:</strong> {j.notes}</p>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                     <select
@@ -366,26 +421,77 @@ function History({ jobs, onDelete, onUpdateStatus }) {
 }
 
 export default function App() {
+  const [session, setSession] = useState(null)
   const [tab, setTab] = useState('dashboard')
-  const [jobs, setJobs] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('tht_jobs') || '[]') } catch { return [] }
-  })
+  const [jobs, setJobs] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    localStorage.setItem('tht_jobs', JSON.stringify(jobs))
-  }, [jobs])
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setLoading(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
-  const addJob = job => { setJobs(j => [job, ...j]); setTab('dashboard') }
-  const deleteJob = id => setJobs(j => j.filter(x => x.id !== id))
-  const updateStatus = (id, status) => setJobs(j => j.map(x => x.id === id ? { ...x, status } : x))
+  useEffect(() => {
+    if (session) fetchJobs()
+  }, [session])
+
+  const fetchJobs = async () => {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .order('date', { ascending: false })
+    if (!error) setJobs(data)
+  }
+
+  const addJob = async (form) => {
+    const { data, error } = await supabase.from('jobs').insert([{
+      ...form,
+      id: Date.now(),
+      user_id: session.user.id,
+      date: new Date().toISOString(),
+    }]).select()
+    if (!error) { setJobs(j => [data[0], ...j]); setTab('dashboard') }
+  }
+
+  const deleteJob = async (id) => {
+    await supabase.from('jobs').delete().eq('id', id)
+    setJobs(j => j.filter(x => x.id !== id))
+  }
+
+  const updateStatus = async (id, status) => {
+    await supabase.from('jobs').update({ status }).eq('id', id)
+    setJobs(j => j.map(x => x.id === id ? { ...x, status } : x))
+  }
+
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    setJobs([])
+    setTab('dashboard')
+  }
+
+  if (loading) return <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text2)' }}>Loading...</div>
+  if (!session) return <Auth />
 
   const tabs = [['dashboard', 'Dashboard'], ['log', 'Log job'], ['history', 'History']]
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '2rem 1rem' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 2 }}>Tech Hours</h1>
-        <p style={{ fontSize: 13, color: 'var(--text2)' }}>Track flagged vs. clock hours by pay type</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 2 }}>Tech Hours</h1>
+          <p style={{ fontSize: 13, color: 'var(--text2)' }}>{session.user.email}</p>
+        </div>
+        <button onClick={signOut} style={{
+          padding: '6px 14px', borderRadius: 'var(--radius-md)',
+          border: '0.5px solid var(--border2)', background: 'transparent',
+          color: 'var(--text2)', fontSize: 12
+        }}>Sign out</button>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
